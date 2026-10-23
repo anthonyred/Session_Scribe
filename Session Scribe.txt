@@ -1,0 +1,13 @@
+Session Scribe
+
+1. Downloaded the data [Photos & Videos]
+2. Seperated the files using a script to Photos & Videos folder
+3. Now noted the Event details such as date, event name & organized by <name> and venue in a note pad.
+4. Identified the speaker of each video & assigned their names to the corresponding video/session.
+5. Then transcription process would start.
+6. 1st I will test the script is working or not by choosing 1 or 2 videos. The test include, Hugging Face's token validity, CUDA, pyannote working status and then transcription part whether the transcribe is upto the mark or not.
+
+Tools $\rightarrow$ Hugging Face token for pyannote, Python, Pyannote, whisper
+
+7. Now the transcription for all the videos takes place. Only one video at a time & also the time taken to transcribe is also being noted in the transcripts. Also when (time) is being noted on when the transcript has started & completed.
+8. ~~All~~ After verification All the transcripts are combined into one single txt file using a command,
