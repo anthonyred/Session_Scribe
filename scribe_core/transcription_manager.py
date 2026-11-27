@@ -4,6 +4,7 @@ Manages spawning the transcription worker process, tracking progress,
 enforcing the Test Gate, and supporting graceful cancellation and resume.
 """
 
+import hashlib
 import os
 import sys
 import json
@@ -13,6 +14,12 @@ from datetime import datetime
 from typing import List, Dict, Callable, Optional, Any
 
 from .session_grouper import SessionInfo, ClipInfo
+
+
+def _glossary_hash(text: str) -> str:
+    """Return first 8 hex chars of SHA-256 of the glossary string."""
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()[:8]
+
 
 class TranscriptionManager:
     """Orchestrates worker subprocess execution and test gate status."""
@@ -59,11 +66,27 @@ class TranscriptionManager:
         log_dir: str,
         language: str = "en",
         initial_prompt: Optional[str] = None,
-        model: str = "medium"
+        model: str = "medium",
+        resolved_paths: Optional[Dict[str, Any]] = None,
+        # Bug 2 additions: cross-directory skip context
+        test_dir: str = "",
+        transcripts_dir: str = "",
+        force_clips: Optional[List[str]] = None,
+        # State-file directory (replaces per-file .meta.json sidecars)
+        state_dir: str = "",
+        # Cloud Engine parameters
+        engine: str = "local",
+        cloud_profile: Optional[Dict[str, Any]] = None,
+        single_request_limit_sec: float = 600.0,
+        chunk_duration_sec: float = 120.0,
+        checkpoint_every_clip: bool = False,
+        timeout_base: float = 15.0,
+        timeout_factor: float = 2.0,
     ) -> str:
         """Writes job configuration JSON file to work_dir."""
         os.makedirs(work_dir, exist_ok=True)
         config_path = os.path.join(work_dir, f"job_config_{int(time.time() * 1000)}.json")
+        ghash = _glossary_hash(initial_prompt or "")
         job_data = {
             "event": event_dict,
             "clips": clips_to_run,
@@ -73,7 +96,23 @@ class TranscriptionManager:
             "language": language,
             "initial_prompt": initial_prompt,
             "model": model,
-            "device": "cuda"
+            "device": "cuda",
+            "resolved_paths": resolved_paths or {},
+            # Cross-dir skip context (Bug 2)
+            "test_dir": os.path.abspath(test_dir) if test_dir else "",
+            "transcripts_dir": os.path.abspath(transcripts_dir) if transcripts_dir else "",
+            "force_clips": force_clips or [],
+            "glossary_hash": ghash,
+            # State directory (replaces .meta.json sidecars beside transcripts)
+            "state_dir": os.path.abspath(state_dir) if state_dir else "",
+            # Cloud Engine configuration
+            "engine": engine,
+            "cloud_profile": cloud_profile or {},
+            "single_request_limit_sec": float(single_request_limit_sec),
+            "chunk_duration_sec": float(chunk_duration_sec),
+            "checkpoint_every_clip": bool(checkpoint_every_clip),
+            "timeout_base": float(timeout_base),
+            "timeout_factor": float(timeout_factor),
         }
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(job_data, f, indent=2)
@@ -82,7 +121,8 @@ class TranscriptionManager:
     def run_worker_blocking(
         self,
         job_config_path: str,
-        progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+        progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        env: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """
         Executes worker subprocess synchronously, streaming stdout progress events.
@@ -98,12 +138,24 @@ class TranscriptionManager:
             job_config_path
         ]
 
+        child_env = os.environ.copy()
+        try:
+            from . import hf_preflight
+            tok = hf_preflight.get_hf_token()
+            if tok and "HF_TOKEN" not in child_env:
+                child_env["HF_TOKEN"] = tok
+        except Exception:
+            pass
+        if env:
+            child_env.update(env)
+
         self.current_process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            bufsize=1
+            bufsize=1,
+            env=child_env,
         )
 
         last_summary = {}

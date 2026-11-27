@@ -1,7 +1,72 @@
+# Session Scribe — .gitignore
+# Environment & Python Caching
 .venv/
+venv/
+env/
 __pycache__/
-*.pyc
-*.wav
-*.log
-.env
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Secrets & Environment variables
+.env*
+!.env.example
+*.key
+*.pem
+*.cert
+*.crt
+*.p12
+*.pfx
+keys/
 config/
+
+# Audio, video, transcript, and spreadsheet/tabular outputs
+*.wav
+*.mp3
+*.mp4
+*.m4a
+*.flac
+*.ogg
+*.aac
+*.wma
+*.xlsx
+*.xls
+transcripts/
+combined/
+
+# Model caches and binary weights
+.cache/
+models/
+*.bin
+*.pt
+*.pth
+*.onnx
+*.safetensors
+
+# Logs
+*.log
+logs/
+
+# Voice Vault, Throttle, and Security State files
+*.vault
+*.throttle
+throttle.json
+totp.dat
+vault_state.json
+
+# UI settings holding personal paths
+ui.ini
+*.ini
+
+# User event data (D:\Events user directories)
+_voice_library/
+_usage/
+Events/
+scribe/
+
+# Scratch & temporary scripts
+scratch/
+inspect_*.py
+/test_*.py
+temp_*.py
+tmp_*

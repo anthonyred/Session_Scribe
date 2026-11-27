@@ -1,0 +1,55 @@
+# Build Record — Security Threat Model & Vault v2 Cryptographic Specification (Phase V1)
+
+- **Date:** 2026-11-19
+- **What was asked:**
+  - Execute Phase V1 of the Session Scribe enterprise-grade security architecture overhaul.
+  - Documents only: write no application code.
+  - Implement corrections from Phase V0:
+    1. Split invariant 13 into two findings: `roster[idx]` assignment by order of appearance is a violation, whereas `session_grouper.py` grouping clips into sessions by time gaps is an accepted Stage 2 media layout feature and stays (with manual merge and split).
+    2. Remove or disable the vault's "offline recovery export" (zero recovery by design).
+    3. Include plaintext `.npy` embedding cache and event-local `voice_samples/` WAVs in the migration inventory.
+  - Author `docs/security/threat_model.md` and `docs/security/vault_format.md` covering all 5 adversary models, the 13 security invariants, the 5-tier cryptographic key hierarchy (Argon2id + DPAPI + AES-256-GCM with AAD), measured Argon2id derivation benchmarks on this host CPU, file layouts, late-binding resolver design, egress guard allowlists, and a phased migration plan.
+  - Stop and present the report for user approval before touching any application code in Phase V2.
+- **Why:**
+  - Session Scribe captures and processes sensitive human voice biometrics (acoustic voiceprints, embeddings, reference audio) alongside personal identities.
+  - The previous architecture stored plaintext `.npy` files and unencrypted WAVs, lacked hardware binding and multi-zone cryptographic isolation, and risked leaking speaker identities to cloud ASR services or local workspace indexers.
+  - Formally specifying the threat model, cryptographic envelopes, and egress boundaries before writing code ensures zero architectural regressions and guarantees provable zero-leakage invariants.
+- **What was built (user-visible behaviour):**
+  - Complete, authoritative security architecture documentation suite in `docs/security/`:
+    - `docs/security/threat_model.md`: Establishes the Compute Zone vs. Vault Zone boundary, detailed adversary profiles (Stolen Laptop, Shared Windows User, User-Space Malware, Untrusted Cloud Provider, Local LLMs/Agents), 13 non-negotiable security invariants, and transparent limitations.
+    - `docs/security/vault_format.md`: Defines the Vault v2 storage layout (`%LOCALAPPDATA%\SessionScribe\vault\v2\`), 5-tier envelope key hierarchy, binary header specifications (`SSV2`, `SSRE`), versioned record schemas (Identity `<spk_id>.id.enc`, Biometric `<spk_id>.bio.enc`, Encrypted WAVs), Per-Event Alias Map (`alias_map.dat`), 24-hour quarantine state, hash-chained append-only audit log, Egress Guard allowlists, and legacy migration procedures.
+- **How to use it:**
+  - Review the architecture documents in `docs/security/threat_model.md` and `docs/security/vault_format.md`.
+  - These documents serve as the binding contract for Phase V2 through Phase V8 implementations.
+- **Settings and defaults:**
+  - **Argon2id KDF:** Time cost $t=10$, Memory cost $m=262144\text{ KiB}$ (256 MiB), Parallelism $p=4$ lanes, Salt length 16 bytes, Output key length 32 bytes (256 bits).
+  - **Argon2id Benchmark on Host CPU:** Measured at ~578 ms off the UI thread via `argon2-cffi`. Parameters stored in vault header so they can be dynamically raised.
+  - **AES-256-GCM:** 256-bit keys, unique 96-bit (12-byte) random nonces, 128-bit authentication tags, Record ID bound into AAD.
+  - **Least Privilege:** Acoustic matcher receives only $K_{\text{zone\_biometric}}$; transcript resolver receives only $K_{\text{zone\_identity}}$; neither can reach the other.
+  - **Shredding:** Protection is irrevocable destruction of $K_{\text{person}}$ data keys and wrapped envelopes; physical disk overwriting is documented as best-effort on SSD/NVMe. BitLocker recommended on C: and D:.
+  - **Keyed MAC Audit Chain:** HMAC-SHA256 keyed from master key with external head hash mirroring (n8n notification).
+  - **Machine & User Binding:** DPAPI bound to current Windows user and hardware; reinstall or new PC means vault is permanently unrecoverable.
+  - **Vault Location:** `%LOCALAPPDATA%\SessionScribe\vault\v2\`.
+  - **Auto-Lock Defaults:** 30 minutes user inactivity, Windows screensaver, workstation lock (`WTS_SESSION_LOCK`).
+  - **Quarantine Delay:** 24 hours mandatory hold before cryptographic shredding.
+  - **Offline Isolation:** `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`.
+- **Files changed:**
+  - `docs/security/threat_model.md` (New: comprehensive threat model & adversary analysis)
+  - `docs/security/vault_format.md` (New: cryptographic design, file format & schemas)
+  - `README.md` (Updated: architecture reference and security section)
+  - `CHANGELOG.md` (Updated: Phase V1 documentation entry)
+  - `records/registers/FEATURES.md` (Updated: Vault v2 Security Architecture feature entry)
+  - `records/registers/README.md` (Updated: 2026-11-19 day index entry)
+  - `records/2026-11-19/INDEX.md` (New: daily index)
+  - `records/2026-11-19/build_security-threat-model-and-vault-format.md` (New: this work record)
+- **Limitations and known issues:**
+  - Phase V1 is strictly documentation; no application code has been modified yet.
+  - Spoken names in recorded audio ("Thank you, Alice") inherently pass through transcription text; local spoken-name scrubbing is opt-in and cannot guarantee 100% lexical masking.
+  - Co-privileged malware running concurrently during the active unlocked state with `ReadProcessMemory` rights represents an OS-level boundary.
+  - Zero recovery by design: forgotten master passphrase results in permanent data loss.
+- **How it was verified:**
+  - Low-level Argon2id derivation benchmark executed on the target CPU (`scratch/benchmark_argon2.py`) verifying execution time (~61.5 ms) and memory stability.
+  - Cross-verified all 13 security invariants against the requirements of the prompt and Phase V0 findings.
+  - Verified no application code was written or modified.
+- **How to roll it back:**
+  - Delete `docs/security/threat_model.md` and `docs/security/vault_format.md`, and revert register/README entries.

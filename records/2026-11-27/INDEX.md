@@ -1,0 +1,6 @@
+# Work Records — 2026-11-27
+
+| Record | Type | Description |
+|:---|:---:|:---|
+| [bug_dialog-clipping-and-centering-audit.md](bug_dialog-clipping-and-centering-audit.md) | `bug` | Dialog Clipping, Top-Left Positioning, and Scaling Audit: Fixed ForgotPassphraseDialog button clipping via pinned bottom footer and scrollable canvas, eliminated top-left +0+0 positioning via `winfo_toplevel()` and monitor work-area centering, removed empty bordered status strips, audited all dialogs across 100%, 125%, 150%, 175% scaling and A+ font size, added case-insensitive `ERASE VAULT` with live matching, bound Escape/Return, and added automated regression test `test_dialog_geometry_and_scaling.py` |
+| [change_github-private-repo-preparation.md](change_github-private-repo-preparation.md) | `change` | GitHub Private Repository Preparation & Secret Audit: Audited .gitignore with strict exclusions (.venv, __pycache__, .env*, API keys, D:\Events, media/Excel outputs, model caches, logs, .key, vault/throttle files, ui.ini, scratch scripts), performed secret scan on tree and git history (0 secrets leaked), audited sizes (0 files > 5MB), updated remote to anthonyred/Session_Scribe, switched to main, and prepared clean single commit |

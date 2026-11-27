@@ -1,0 +1,64 @@
+# Build Record: Start Menu Desktop App, Persistent Voice Centroids & Cluster Matching
+
+- **Date:** 2026-11-25
+- **What was asked:**
+  1. **Persist cluster data:** When Stage 3 diarizes a clip, save the per-clip speaker segments, cluster centroids (256-dim unit vectors), and short representative snippet time ranges (not the audio itself) to `scribe\state\clusters\<clip>.json`, with no names.
+  2. **Re-Identify across restarts & delayed vault unlock:** Re-Identify must load this cluster data after the app has been restarted, and matching must work seamlessly after the vault is unlocked later. For older events without this file, maintain the label-based fallback and notify the user in the dialog that automatic matching is unavailable. Note in the README that this file contains voice centroids.
+  3. **Embedding model and dimension:** Confirm clusters and enrolled profiles use the same embedding model (`pyannote/wespeaker-voxceleb-resnet34-LM`) and dimension (256). Fix the previous report typo (which mentioned 512). Add a test matching a cluster against an enrolled profile through the real code path.
+  4. **Start-menu app:**
+     - User-level Start menu shortcut "Session Scribe" targeting `.venv\Scripts\pythonw.exe -m gui.app` from `D:\Session_Scribe` with no console window.
+     - Multi-resolution icon `assets\icons\session_scribe.ico` containing 16, 24, 32, 48, 64, 128, and 256 px resolutions.
+     - Explicit `AppUserModelID = "SessionScribe.TranscriptionApp.2026"` for correct Windows taskbar grouping and icon identity.
+     - Single-instance enforcement: second launch brings the existing window to the foreground and exits.
+     - Graphical fatal startup failure dialog reporting the log path when running under `pythonw.exe`. Rotated logging to `%LOCALAPPDATA%\SessionScribe\logs\session_scribe.log`.
+     - About dialog (accessible via Help menu and header) with name, version, author Anthony Reddy, copyright "© 2026 Anthony Reddy. All rights reserved.", and logo, in theme tokens.
+     - Idempotent installer/uninstaller scripts: `scripts\install_start_menu.ps1` and `scripts\uninstall_start_menu.ps1` with destination directory parameter for testing.
+     - Comprehensive unit tests and README documentation.
+- **Why:**
+  - When restarting the desktop app, operators should not lose the ability to perform biometric speaker identification on already-transcribed clips. Persisting anonymous acoustic centroids allows Re-Identify to match profiles anytime the vault is unlocked, without re-transcription or storing unencrypted audio on disk.
+  - A professional Windows desktop application requires a user-level Start menu entry, proper taskbar grouping, single-instance behavior, and non-silent startup error handling when running under `pythonw.exe`.
+- **What was built (user-visible behaviour):**
+  - **Persistent Cluster Centroids:** Stage 3 saves `<event root>\scribe\state\clusters\<clip>.json` upon completing diarization. Contains anonymous segments, centroid vectors ($\mathbb{R}^{256}$), and snippet time ranges `[start, end]`. Zero personal names and zero audio bytes are stored.
+  - **Delayed Unlock Matching:** When opening Re-Identify in Stage 3, persisted clusters are loaded across clips. If the vault is unlocked, clusters are automatically matched against the enrolled roster. If opened on an older event lacking cluster files, a high-contrast notice informs the user: *"Notice: Automatic matching is not available for older events without saved voice cluster data. You can manually assign speaker aliases below."*
+  - **Start Menu Shortcut:** Running `& .\scripts\install_start_menu.ps1` creates "Session Scribe.lnk" in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\`. Launches with `pythonw.exe` (no black terminal window).
+  - **Taskbar Icon & AppUserModelID:** Pinned or running windows group under `SessionScribe.TranscriptionApp.2026` and render the official multi-resolution icon (16–256 px).
+  - **Single Instance Focus:** Launching a second instance restores and focuses the existing window without opening duplicates.
+  - **Startup Error Dialog:** Fatal errors during startup display a clear Tk/Win32 message box detailing the exception and linking to `%LOCALAPPDATA%\SessionScribe\logs\session_scribe.log`.
+  - **About Dialog:** Accessible via the **About** button in the top header or **Help ▾ → About Session Scribe** on the window menu bar. Displays application metadata, author Anthony Reddy, and copyright `© 2026 Anthony Reddy. All rights reserved.` in theme tokens.
+- **How to use it:**
+  - Install shortcut: `& .\scripts\install_start_menu.ps1`
+  - Uninstall shortcut: `& .\scripts\uninstall_start_menu.ps1`
+  - In Stage 3, click **Re-Identify…** at any time. If the vault was unlocked after transcription, clusters are automatically matched against enrolled profiles.
+- **Settings and defaults:**
+  - Embedding model: `pyannote/wespeaker-voxceleb-resnet34-LM` (revision `837717ddb9ff5507820346191109dc79c958d614`)
+  - Embedding dimension: 256
+  - Cluster state folder: `<event root>\scribe\state\clusters\`
+  - Log file: `%LOCALAPPDATA%\SessionScribe\logs\session_scribe.log` (2 MB max, 5 backups)
+  - Mutex name: `Global\SessionScribe_SingleInstance_Mutex_v2026`
+- **Files changed:**
+  - `scribe_core/identification_engine.py` — Added `snippet_time_range` to `SpeakerCluster`, `find_representative_snippet_range`, `save_clip_clusters_to_disk`, `load_clip_clusters_from_disk`, `load_all_event_clusters`, and `extract_and_save_diarized_clusters`. Made vault storage optional for cluster linking.
+  - `scribe_core/transcribe_worker.py` — Invokes `extract_and_save_diarized_clusters` upon completing diarization.
+  - `gui/stage3_tab.py` — Loads persisted clusters in `_reidentify_clicked`, executes delayed matching if vault is unlocked, and passes `has_acoustic_data` flag to dialog.
+  - `gui/reidentify_dialog.py` — Displays warning notice when `has_acoustic_data=False`.
+  - `gui/app.py` — Added `__copyright__`, Help menu on window menu bar, About button in header, and copyright line in About dialog.
+  - `scripts/install_start_menu.ps1` & `scripts/uninstall_start_menu.ps1` — Added `$DestinationDir` parameter for test isolation.
+  - `tests/test_identification_engine.py` — Added tests 13, 14, 15 covering real-path cluster-to-profile matching, cluster persistence, canary checks, and delayed unlock matching.
+  - `tests/test_start_menu_and_app.py` — Added 8 unit tests covering shortcut creation, 7 icon resolutions, metadata, single instance, and simulated startup errors.
+  - `README.md` — Documented voice centroids note and comprehensive Start menu setup / taskbar pinning guide.
+- **Limitations and known issues:**
+  - Older events transcribed prior to this update do not have `.json` files in `scribe\state\clusters\`. They continue to use the label-based fallback in Re-Identify.
+- **How it was verified:**
+  - `tests/test_identification_engine.py` (13 tests passing in 5.7s):
+    - Tested matching cluster against enrolled profile through real code path (`match_roster` with `VaultV2StorageEngine` and `QuarantineManager`).
+    - Tested quarantine rejection invariant.
+    - Tested saving to `scribe\state\clusters\<clip>.json` and canary scan verifying no personal names or audio bytes touch disk.
+    - Tested reload and automatic matching after delayed vault unlock.
+  - `tests/test_start_menu_and_app.py` (8 tests passing in 2.3s):
+    - Tested ICO asset contains 16, 24, 32, 48, 64, 128, and 256 px.
+    - Tested AppUserModelID, author, copyright metadata.
+    - Tested installer writes shortcut to temp destination, verified TargetPath, Arguments, WorkingDirectory, and IconLocation.
+    - Tested uninstaller removes shortcut.
+    - Tested SingleInstanceManager primary acquisition, secondary detection, and release.
+    - Tested simulated startup failure invokes graphical dialog and writes rotating log.
+- **How to roll it back:**
+  - Revert changes to `scribe_core/identification_engine.py`, `scribe_core/transcribe_worker.py`, `gui/stage3_tab.py`, `gui/reidentify_dialog.py`, `gui/app.py`, `scripts/`, `tests/`, and `README.md`.

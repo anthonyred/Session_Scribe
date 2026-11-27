@@ -2,3 +2,10 @@
 torch==2.4.1+cu121
 torchaudio==2.4.1+cu121
 speechbrain==1.1.1
+nvidia-riva-client==2.27.0
+protobuf==6.33.5
+argon2-cffi==25.1.0
+cryptography==50.0.2
+zxcvbn==4.5.0
+pyotp==2.12.1
+qrcode==8.2

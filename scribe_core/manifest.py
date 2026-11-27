@@ -5,6 +5,7 @@ Creates, validates, and serializes the complete event manifest to D:\\Events\\<e
 
 import os
 import json
+import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional, Tuple, Any
@@ -21,6 +22,7 @@ class EventDetails:
     venue: str
     sponsors: Optional[str] = None
     speaker_mode: str = "single" # "single" or "panel"
+    event_id: Optional[str] = None # Random event identifier (evt_...) for Vault v2 alias map
 
     def validate(self) -> List[str]:
         """Validates fields. Returns list of warning messages."""
@@ -44,21 +46,26 @@ class ManifestManager:
         event: EventDetails,
         sessions: List[SessionInfo],
         unassigned_photos: List[PhotoInfo],
-        settings_used: Dict[str, Any]
+        settings_used: Dict[str, Any],
+        event_root: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Constructs the JSON-serializable manifest dictionary."""
+        event_id = event.event_id or f"evt_{secrets.token_hex(8)}"
+        event.event_id = event_id
+
         data: Dict[str, Any] = {
             "version": "1.0",
             "created_at": datetime.now(IST).isoformat(),
             "event": {
+                "event_id": event_id,
                 "name": event.event_name.strip(),
                 "date": event.date.strip(),
                 "organiser": event.organiser.strip(),
                 "venue": event.venue.strip(),
-                "speaker_mode": event.speaker_mode
+                "speaker_mode": event.speaker_mode,
             },
             "settings": settings_used,
-            "sessions": [s.to_dict() for s in sessions],
+            "sessions": [s.to_dict(compute_zone_safe=True) for s in sessions],
             "unassigned_photos": [p.to_dict() for p in unassigned_photos],
             "summary": {
                 "total_sessions": len(sessions),
@@ -68,6 +75,9 @@ class ManifestManager:
                 "total_photos": sum(len(s.photos) for s in sessions) + len(unassigned_photos)
             }
         }
+
+        if event_root and event_root.strip():
+            data["event_root"] = os.path.abspath(event_root.strip())
 
         # Sponsors: optional; omit if blank
         if event.sponsors and event.sponsors.strip():
@@ -82,7 +92,8 @@ class ManifestManager:
         event: EventDetails,
         sessions: List[SessionInfo],
         unassigned_photos: List[PhotoInfo],
-        settings_used: Dict[str, Any]
+        settings_used: Dict[str, Any],
+        event_root: Optional[str] = None,
     ) -> Tuple[str, List[str]]:
         """
         Validates event details and saves manifest.json to scribe_dir.
@@ -90,7 +101,11 @@ class ManifestManager:
             (manifest_path, list_of_warnings)
         """
         warnings = event.validate()
-        manifest_data = cls.build_manifest(event, sessions, unassigned_photos, settings_used)
+        if event_root is None:
+            event_root = os.path.dirname(os.path.abspath(scribe_dir))
+        manifest_data = cls.build_manifest(
+            event, sessions, unassigned_photos, settings_used, event_root=event_root
+        )
 
         os.makedirs(scribe_dir, exist_ok=True)
         manifest_path = os.path.join(scribe_dir, "manifest.json")

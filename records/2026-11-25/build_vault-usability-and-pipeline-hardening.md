@@ -1,0 +1,56 @@
+# Work Record: Voice Vault Usability & Speaker-to-Text Pipeline Hardening
+
+- **Date:** 2026-11-25
+- **Type:** `build`
+- **What was asked:**
+  1. **Vault Usability:**
+     - Add "Forgot passphrase?" action link in `UnlockVaultDialog`. Plainly explain that no recovery exists and that continuing permanently erases the vault (all enrolled voices, event alias links, authenticator setup) while leaving event data (`transcripts/`, `manifest.json`, audio files) untouched. Require typing `ERASE VAULT`. Best-effort shred vault files, clear throttle and TOTP state, log `VAULT_PERMANENTLY_ERASED` to the audit log, and immediately transition to initial Setup.
+     - Passphrase age reminder: Store `passphrase_changed_at` in `vault_settings.json`. After 365 days, show a non-blocking message at unlock with "Change now" and "Remind me in 7 days". Show passphrase age in the status chip tooltip / display. Changing passphrase resets the timer. Never force a change.
+     - Add detailed Voice Vault guide in `README.md` with exact clicks for all 9 key operations (create vault, unlock/lock, enrol voice, event roster, panel/solo session, re-identify and undo, quarantine manager and delete, change passphrase, forgot passphrase), security warning, dialog entry points, and voice centroid notes.
+     - Add clear UI entry points for Quarantine Manager, delete flow, Change Passphrase, and Event Roster.
+  2. **Pipeline Verification & Hardening:**
+     - Check and verify whether NVIDIA Riva cloud transcription returns word-level timestamps and ensure speaker alignment works with it as it does with local Whisper.
+     - Verify sentence spanning a speaker change splits at speaker transition and does not assign the whole sentence to one speaker.
+     - Stage 3 table and Excel comparison report: show decrypted names when vault is unlocked, aliases (`S01`) when locked.
+     - Measure and report diarization and speaker identification timings separately from ASR transcription time in clip state, transcript headers, Stage 3 status table, and Excel/CSV comparison reports.
+     - Multi-speaker support: verify 3–4 speakers, `[Audience]`, `[Unidentified]`, and overlapping speakers in combined transcripts.
+- **Why:**
+  - Secure biometric vaults must remain strictly manageable across their full lifecycle without data loss for event content if credentials are forgotten.
+  - Users need clear guidance on passphrase hygiene with non-coercive reminders.
+  - High-precision diarization alignment requires word-level timestamps regardless of whether inference executes locally via Whisper or remotely via NVIDIA Riva.
+  - Transparent performance metrics allow organizers to separate pure transcription latency from diarization and biometric lookup overhead.
+- **What was built (user-visible behaviour):**
+  - **"Forgot passphrase?" Dialog:** Clickable link in `UnlockVaultDialog` opens an honest explanation dialog requiring typing `ERASE VAULT`. Wipes vault keys and biometric state cleanly while preserving 100% of event files.
+  - **Passphrase Age Reminder:** Non-blocking modal displayed upon unlock when master passphrase is $\ge 365$ days old. Offers "Change now" (opens Change Passphrase dialog), "Remind me in 7 days" (snooze), or "Dismiss". The header chip tooltip and status text reflect age (`{age_days}d`).
+  - **Header & Menu Access Points:** Top-level `Vault ▾` menubutton and menubar cascade provide 1-click access to Lock/Unlock, Enroll Profile, Event Roster, Quarantine Manager (24h Hold), Change Passphrase, and Forgot Passphrase. Status chip right-click context menu provides quick actions.
+  - **Dynamic Stage 3 & Excel Speaker Names:** Stage 3 clip table and comparison reports dynamically render real names when the vault is unlocked, and fall back to opaque aliases (`S01`, `S02`) when locked.
+  - **Separated Timing Metrics:** Diarization and Identification run times are independently measured and displayed alongside ASR time in Stage 3 (`(Diar: 4.2s, ID: 0.8s)`) and in dedicated columns in Excel (`.xlsx`) and CSV comparison reports.
+  - **Riva High-Resolution Diarization Alignment:** `build_segments_from_words` preserves the word timestamps array returned by Riva, providing identical high-resolution word alignment as local Whisper.
+- **How to use it:**
+  - Open `Vault ▾` -> `Lock / Unlock Vault...` to unlock. If prompted with the 365-day reminder, choose "Change now" or snooze for 7 days.
+  - If a passphrase is lost, click "Forgot passphrase?" in the unlock dialog, review the warning, type `ERASE VAULT`, and set up a fresh vault.
+  - In Stage 3, view timing breakdowns in the "Time Taken" column. Export comparison reports via **Export Comparison Report** to view separate ASR, Diarization, and Identification columns.
+- **Settings and defaults:**
+  - Passphrase age threshold: 365 days.
+  - Snooze duration: 7 days (`remind_after_utc`).
+  - Vault erasure confirmation string: `ERASE VAULT`.
+- **Files changed:**
+  - `scribe_core/voice_vault.py`: Added passphrase age tracking, snooze, and `erase_vault()`.
+  - `gui/vault_dialog.py`: Added `ForgotPassphraseDialog`, `PassphraseAgeWarningDialog`, `ChangePassphraseDialog`, updated `VaultStatusChip` and `UnlockVaultDialog`.
+  - `gui/event_roster_dialog.py`: Added Quarantine Profile and Quarantine Manager action buttons.
+  - `gui/app.py`: Added `Vault ▾` menubutton and menubar cascade with handlers.
+  - `scribe_core/cloud_engine.py`: Preserved `"words"` array in `build_segments_from_words()`.
+  - `scribe_core/clip_state.py`: Added `diarization_time_sec` and `identification_time_sec` fields to `write_clip()`.
+  - `scribe_core/transcribe_worker.py`: Enabled `word_timestamps=True` in local Whisper, timed diarization and identification, appended durations to transcript headers.
+  - `scribe_core/run_comparison.py`: Exported separate timing columns and resolved `alias_to_name`.
+  - `gui/stage3_tab.py`: Updated speaker name/alias resolution on lock/unlock and passed alias map to comparison exporter.
+  - `tests/test_vault_usability_and_pipeline.py`: Comprehensive test suite verifying usability and pipeline hardening.
+  - `README.md`: Added Voice Vault Guide with exact clicks and updated verification date.
+- **Limitations and known issues:**
+  - Vault erasure is permanent and cannot be undone; event data is preserved, but any voice embeddings must be re-enrolled.
+  - TOTP recovery requires resetting the vault or using the 24-hour TOTP reset wait period.
+- **How it was verified:**
+  - Fast test suite: Ran `tests/test_vault_usability_and_pipeline.py` (7 tests, all passing in 6.9s).
+  - Cloud engine tests: Ran `tests/test_cloud_engine.py` (12 tests, all passing in 0.3s).
+- **How to roll it back:**
+  - Revert changes to the listed files via git or file editor.
